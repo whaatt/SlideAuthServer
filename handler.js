@@ -10,7 +10,7 @@
 // Just spits the user token back to Deepstream. The only
 // validation we do here is making sure the token is well-formed.
 module.exports.authenticate = (event, context, callback) => {
-  const body = JSON.parse(event.body)
+  const body = JSON.parse(event.body);
   let response; // Response object.
   if (!body.authData || // Not from Deepstream.
       !body.authData.UUID || // No UUID provided.
@@ -21,12 +21,12 @@ module.exports.authenticate = (event, context, callback) => {
       body: JSON.stringify({
         message: 'Invalid auth info.'
       })
-    }
+    };
   } else {
     response = {
       statusCode: 200,
       body: JSON.stringify({
-        userId: 'generic',
+        username: 'generic',
         clientData: { message : 'Valid UUID.' },
         serverData: { UUID : body.authData.UUID }
       })
