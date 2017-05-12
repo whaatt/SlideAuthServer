@@ -1,4 +1,4 @@
-/* 
+/*
  * File: users.js
  * Type: Handler Functions
  * Contains user functions.
@@ -44,7 +44,6 @@ module.exports.anonymous = (event, context, callback) => {
     // Generate new user.
     const newUser = {
       username: UUID(),
-      tempUsername: null,
       anonymous: true,
       name: name,
       UUID: UUID()
@@ -100,14 +99,12 @@ module.exports.register = (event, context, callback) => {
     // Generate new user.
     const newUser = {
       username: username,
-      tempUsername: null,
       anonymous: false,
       name: name,
       UUID: UUID()
     };
 
-    // Check if username exists (by chance), and create
-    // it if it does not exist. First check should pass.
+    // Check if username exists and create it otherwise.
     Users.exists(newUser.username, (error, exists) => {
       if (error) callback(null, API.errors.database);
       else if (exists) callback(null, API.errors.duplicate);
@@ -146,12 +143,6 @@ module.exports.update = (event, context, callback) => {
         minLength: 1,
         maxLength: 40
       },
-      tempUsername: {
-        type: 'string',
-        required: false,
-        minLength: 1,
-        maxLength: 40
-      },
       newUsername: {
         type: 'string',
         required: false,
@@ -170,7 +161,6 @@ module.exports.update = (event, context, callback) => {
     // Extract attributes.
     let username = body.username;
     let newUsername = body.newUsername;
-    let tempUsername = body.tempUsername;
     let UUID = body.UUID;
     let name = body.name;
 
@@ -182,7 +172,6 @@ module.exports.update = (event, context, callback) => {
 
     const updates = {};
     // Add optional attributes to our updated user object.
-    if (tempUsername !== undefined) updates.tempUsername = tempUsername;
     if (name !== undefined) updates.name = name;
 
     // Verify user credentials, then try to make
@@ -190,36 +179,31 @@ module.exports.update = (event, context, callback) => {
     Users.verify(editUser, (error, exists) => {
       if (error) callback(null, API.errors.database);
       else if (!exists) callback(null, API.errors.credentials);
-      // Check if the given tempUsername (or undefined) is a duplicate.
-      else Users.exists(updates.tempUsername, (error, exists) => {
+      // Check if the given newUsername (or undefined) is a duplicate.
+      Users.exists(newUsername, (error, exists) => {
         if (error) callback(null, API.errors.database);
         else if (exists) callback(null, API.errors.duplicate);
-        // Check if the given newUsername (or undefined) is a duplicate.
-        else Users.exists(newUsername, (error, exists) => {
-          if (error) callback(null, API.errors.database);
-          else if (exists) callback(null, API.errors.duplicate);
 
-          // If changing username, save the old record, delete
-          // it, and then create a new user with record data.
-          else if (newUsername !== undefined)
-            Users.read(username, (error, changedUser) => {
+        // If changing username, save the old record, delete
+        // it, and then create a new user with record data.
+        else if (newUsername !== undefined)
+          Users.read(username, (error, changedUser) => {
+            if (error) callback(null, API.errors.database);
+            else Users.delete(username, (error, data) => {
+              changedUser.username = newUsername;
               if (error) callback(null, API.errors.database);
-              else Users.delete(username, (error, data) => {
-                changedUser.username = newUsername;
+              Users.create(changedUser, (error, data) => {
                 if (error) callback(null, API.errors.database);
-                Users.create(changedUser, (error, data) => {
-                  if (error) callback(null, API.errors.database);
-                  else callback(null, API.response(200, changedUser));
-                });
+                else callback(null, API.response(200, changedUser));
               });
             });
-
-          // Finally create the user if all the checks succeed.
-          // TODO: Restructure this to use sequential Promises.
-          else Users.update(username, updates, (error, data) => {
-            if (error) callback(null, API.errors.database);
-            else callback(null, API.response(200, updates));
           });
+
+        // Finally create the user if all the checks succeed.
+        // TODO: Restructure this to use sequential Promises.
+        else Users.update(username, updates, (error, data) => {
+          if (error) callback(null, API.errors.database);
+          else callback(null, API.response(200, updates));
         });
       });
     });

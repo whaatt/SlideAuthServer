@@ -1,4 +1,4 @@
-/* 
+/*
  * File: auth.js
  * Type: Handler Functions
  * Contains auth functions.

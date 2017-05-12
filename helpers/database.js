@@ -1,4 +1,4 @@
-/* 
+/*
  * File: database.js
  * Type: Helper Functions
  * Contains DB client.
@@ -23,7 +23,6 @@ module.exports = { Users: {} };
 const userAttributes = [
   'username',
   'anonymous',
-  'tempUsername',
   'UUID',
   'name'
 ];
@@ -133,7 +132,6 @@ module.exports.Users.batchReadPublic = (users, call) => {
           ({ username: user })),
         AttributesToGet: [
           'username',
-          'tempUsername',
           'name'
         ]
       }

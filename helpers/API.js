@@ -1,4 +1,4 @@
-/* 
+/*
  * File: API.js
  * Type: Helper Functions
  * Contains API helpers.
