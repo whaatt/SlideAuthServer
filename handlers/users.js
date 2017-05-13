@@ -27,7 +27,7 @@ module.exports.anonymous = (event, context, callback) => {
         type: 'string',
         required: true,
         minLength: 1,
-        maxLength: 40
+        maxLength: 30
       }
     }
   };
@@ -79,13 +79,13 @@ module.exports.register = (event, context, callback) => {
         type: 'string',
         required: true,
         minLength: 1,
-        maxLength: 40
+        maxLength: 30
       },
       name: {
         type: 'string',
         required: true,
         minLength: 1,
-        maxLength: 40
+        maxLength: 30
       },
       temporary: {
         type: 'boolean',
@@ -204,27 +204,23 @@ module.exports.update = (event, context, callback) => {
     properties: {
       username: {
         type: 'string',
-        required: true,
-        minLength: 1,
-        maxLength: 40
+        required: true
       },
       UUID: {
         type: 'string',
-        required: true,
-        minLength: 1,
-        maxLength: 40
+        required: true
       },
       name: {
         type: 'string',
         required: false,
         minLength: 1,
-        maxLength: 40
+        maxLength: 30
       },
       newUsername: {
         type: 'string',
         required: false,
         minLength: 1,
-        maxLength: 40
+        maxLength: 30
       }
     }
   };
@@ -258,6 +254,17 @@ module.exports.update = (event, context, callback) => {
     Users.verify(editUser, true)
       .then((valid) => {
         if (!valid) throw API.errors.credentials;
+        else return true;
+      })
+      .then((data) => {
+        if (newUsername)
+          // Check new username for duplication.
+          return Users.exists(newUsername)
+            .then((exists) => {
+              if (exists) throw API.errors.duplicate;
+              else return true;
+            });
+        // No new username.
         else return true;
       })
       .then((data) => Users.update(username, updates))
