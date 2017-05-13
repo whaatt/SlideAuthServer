@@ -15,16 +15,36 @@
 // Set up the DynamoDB client.
 const AWS = require('aws-sdk');
 const DB = new AWS.DynamoDB.DocumentClient();
+const API = require('../helpers/API.js');
 
 // Database helper module.
 module.exports = { Users: {} };
+const tableName = process.env.TABLE_NAME;
 
 // Used in getting a user.
 const userAttributes = [
   'username',
+  'timestamp',
+  'temporary',
   'anonymous',
+  'linked',
   'UUID',
   'name'
+];
+
+// Returned for public batch calls.
+const publicAttributes = [
+  'username',
+  'linked',
+  'name'
+];
+
+// Used to verify credentials.
+const verifyAttributes = [
+  'username',
+  'temporary',
+  'anonymous',
+  'UUID'
 ];
 
 // Maps objects to AWS-style updates.
@@ -41,72 +61,86 @@ const mapToUpdates = (original) => {
   return mapped
 };
 
-// Calls back with whether username exists.
-module.exports.Users.exists = (username, call) => {
-  // TODO: Remove this line once handlers are restructured.
-  if (username === undefined) call(null, false);
+// Returns a promise with whether username exists.
+module.exports.Users.exists = (username) => {
+  // DynamoDB parameters.
+  const readParams = {
+    ConsistentRead: true,
+    TableName: tableName,
+    Key: { username: username },
+    AttributesToGet: ['username']
+  };
 
-  else {
-    // DynamoDB parameters.
-    const params = {
-      ConsistentRead: true,
-      TableName: 'streamers',
-      Key: { username: username },
-      AttributesToGet: ['username']
-    };
-
-    // Check if the username exists.
-    DB.get(params, (error, data) => {
+  // Check if the username exists.
+  return DB.get(readParams).promise()
+    .then((data) => {
       const exists = !!data.Item;
-      if (!error) call(error, exists);
-      else call(error, null);
+      return exists;
+    })
+    .catch((error) => {
+      // API error response object.
+      throw API.errors.database;
     });
-  }
 };
 
-// Calls back if all user credentials correct
-// and the given user is not an anonymous user.
-module.exports.Users.verify = (user, call) => {
+// Returns promise with whether credentials correct.
+module.exports.Users.verify = (user, forEdit) => {
   // DynamoDB parameters.
-  const params = {
+  const readParams = {
     ConsistentRead: true,
-    TableName: 'streamers',
+    TableName: tableName,
     Key: { username: user.username },
-    AttributesToGet: ['username', 'UUID']
+    AttributesToGet: verifyAttributes
   };
 
   // Check credentials on username.
-  DB.get(params, (error, data) => {
-    const exists = !!data.Item;
-    if (error) call(error, null);
-    else if (!exists) call(error, false);
-    else if (data.Item.anonymous === true)
-      call(error, false)
-    else if (data.Item.UUID !== user.UUID)
-      call(error, false);
-    else call(error, true);
-  });
+  return DB.get(readParams).promise()
+    .then((data) => {
+      const exists = !!data.Item;
+      // User does not even exist.
+      if (!exists) return false;
+      // No editing of temporary users.
+      else if (forEdit && data.Item.temporary === true)
+        return false;
+      // No editing of anonymous users.
+      else if (forEdit && data.Item.anonymous === true)
+        return false;
+      // UUID password was incorrect.
+      else if (data.Item.UUID !== user.UUID)
+        return false;
+      // Credentials correct.
+      else return true;
+    })
+    .catch((error) => {
+      // API error response object.
+      throw API.errors.database;
+    });
 };
 
-// Calls back with true if create succeeds.
-module.exports.Users.create = (user, call) => {
+// Returns promise true if create succeeds.
+module.exports.Users.create = (user) => {
   // DynamoDB parameters.
-  const params = {
+  const putParams = {
     TableName: 'streamers',
     Item: user
   };
 
   // Actually perform the create.
-  DB.put(params, (error, data) => {
-    if (error) call(error, false);
-    else call(error, true);
-  });
+  return DB.put(putParams).promise()
+    .then((data) => {
+      // Create succeeded.
+      return true;
+    })
+    .catch((error) => {
+      // API error response object.
+      throw API.errors.database;
+    });
 };
 
-// Reads all attributes of a user from the DB.
-module.exports.Users.read = (username, call) => {
+// Promises all attributes of a user from DB.
+module.exports.Users.read = (username) => {
   // DynamoDB parameters.
-  const params = {
+  const readParams = {
     ConsistentRead: true,
     TableName: 'streamers',
     Key: { username: username },
@@ -114,83 +148,120 @@ module.exports.Users.read = (username, call) => {
   };
 
   // Check credentials on username.
-  DB.get(params, (error, data) => {
-    if (error) call(error, null);
-    else if (!data.Item) call(true, null);
-    else call(error, data.Item);
-  });
+  return DB.get(readParams).promise()
+    .then((data) => {
+      // Take care of potential data races.
+      if (!data.Item) throw API.errors.database;
+      else return data.Item;
+    })
+    .catch((error) => {
+      // API error response object.
+      throw API.errors.database;
+    });
 };
 
-// Get information about several users (like in a room) at once.
-module.exports.Users.batchReadPublic = (users, call) => {
+// Get information about several users at once.
+module.exports.Users.batchReadPublic = (users) => {
   // DynamoDB parameters.
-  const params = {
+  const readParams = {
     ConsistentRead: true,
     RequestItems: {
       streamers: {
-        Keys: users.map(user => 
-          ({ username: user })),
-        AttributesToGet: [
-          'username',
-          'name'
-        ]
+        Keys: users.map(user => ({ username: user })),
+        AttributesToGet: publicAttributes
       }
     }
   };
 
-  DB.batchGet(params, (error, data) => {
-    if (error) call(error, null);
-    else call(error, data.Responses.streamers);
-  });
+  // Get several items from DB at once.
+  return DB.batchGet(readParams).promise()
+    .then((data) => {
+      // DB only returns data for valid users.
+      return data.Responses.streamers;
+    })
+    .catch((error) => {
+      // API error response object.
+      throw API.errors.database;
+    });
 };
 
-// Updates the user given by username with parameters in properties.
-module.exports.Users.update = (username, properties, call) => {
+// Updates the given username with parameters in properties.
+module.exports.Users.update = (username, properties) => {
   const newUsername = properties.newUsername;
   delete properties.newUsername;
 
   // DynamoDB parameters.
-  const params = {
+  const updateParams = {
     TableName: 'streamers',
-    Key: { username: username },
+    Key: { username: newUsername || username },
     AttributeUpdates: mapToUpdates(properties)
   };
 
-  // DynamoDB does not allow updates
-  // to the primary key of an entry.
-  if (newUsername !== undefined) {
-    const deleteParams = {
-      TableName: 'streamers',
-      Key: { username: username }
-    };
+  // If we are updating newUsername, we have
+  // to create the new user first, delete the
+  // old user, and then perform update. If not
+  // we can just update the user ordinarily.
+  return new Promise((resolve, reject) => {
+    if (newUsername !== undefined) {
+      const deleteParams = {
+        TableName: 'streamers',
+        Key: { username: username }
+      };
 
-    DB.delete(deleteParams, (error, data) => {
-      if (error) call(error, null);
-      else DB.update(params, (error, data) => {
-        if (error) call(error, null);
-        else call(error, true);
-      });
+      // Save user data from the old username.
+      module.exports.Users.read(username)
+        .then((userData) => {
+          // Patch new username into saved data.
+          userData.username = newUsername;
+
+          // DynamoDB parameters.
+          const createParams = {
+            TableName: 'streamers',
+            Item: userData
+          };
+
+          // Create the new username record.
+          return DB.put(createParams).promise();
+        })
+        .then((data) => {
+          // Delete the old username record.
+          resolve(DB.delete(deleteParams).promise());
+        });
+    } else {
+      // Do nothing.
+      resolve(true);
+    }
+  })
+    .then((data) => {
+      // Perform the update on new or old user.
+      return DB.update(updateParams).promise();
+    })
+    .then((data) => {
+      properties.newUsername = newUsername;
+      return properties;
+    })
+    .catch((error) => {
+      // API error response object.
+      throw API.errors.database;
     });
-  }
-
-  // Perform the update and return true.
-  DB.update(params, (error, data) => {
-    if (error) call(error, null);
-    else call(error, true);
-  });
 };
 
-// Calls back with true if delete succeeds.
+// Returns a Promise with true if delete succeeds.
 module.exports.Users.delete = (username, call) => {
   // DynamoDB parameters.
-  const params = {
+  const deleteParams = {
     TableName: 'streamers',
     Key: { username: username }
   };
 
-  // Actually perform the create.
-  DB.delete(params, (error, data) => {
-    if (error) call(error, false);
-    else call(error, true);
-  });
+  // Actually perform the delete.
+  return DB.delete(params).promise()
+    .then((data) => {
+      // Delete succeeded.
+      return true;
+    })
+    .catch((error) => {
+      // API error response object.
+      throw API.errors.database;
+    });
 };

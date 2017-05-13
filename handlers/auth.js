@@ -37,14 +37,16 @@ module.exports.login = (event, context, callback) => {
 
     // Check if credentials are valid, then re-read
     // the user and add tempUsername to serverData.
-    Users.verify(body.authData, (error, exists) => {
-      if (error) callback(null, API.errors.database);
-      else if (!exists) callback(null, API.errors.credentials);
-      else Users.read(body.authData.username, (error, data) => {
-        if (error) callback(null, API.errors.database);
+    Users.verify(body.authData)
+      .then((valid) => {
+        if (!valid)
+          callback(null, API.errors.credentials)
+        else return Users.read(body.authData.username);
+      })
+      .then(data => {
         returnToDS.serverData.tempUsername = data.tempUsername;
         callback(null, API.response(200, returnToDS, true));
-      });
-    });
+      })
+      .catch((error) => { callback(null, error) });
   }
 };

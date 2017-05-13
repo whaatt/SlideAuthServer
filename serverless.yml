@@ -8,6 +8,8 @@ provider:
   name: aws
   runtime: nodejs6.10
   profile: slide
+  environment:
+    TABLE_NAME: "streamers"
   iamRoleStatements:
     - Effect: "Allow"
       Action:
