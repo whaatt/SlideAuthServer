@@ -21,7 +21,7 @@ module.exports.anonymous = (event, context, callback) => {
 
   // Validation schema.
   const schema = {
-    type: 'Object',
+    type: 'object',
     properties: {
       name: {
         type: 'string',
@@ -73,11 +73,12 @@ module.exports.register = (event, context, callback) => {
 
   // Validation schema.
   const schema = {
-    type: 'Object',
+    type: 'object',
     properties: {
       username: {
         type: 'string',
         required: true,
+        format: 'alpha-numeric',
         minLength: 1,
         maxLength: 30
       },
@@ -90,6 +91,26 @@ module.exports.register = (event, context, callback) => {
       temporary: {
         type: 'boolean',
         required: true
+      },
+      authorization: {
+        type: 'object',
+        // TODO: CHANGE.
+        required: false,
+        properties: {
+          provider: {
+            type: 'string',
+            required: true,
+            pattern: /Spotify/
+          },
+          token: {
+            type: 'string',
+            required: true
+          },
+          ID: {
+            type: 'string',
+            required: true
+          }
+        }
       },
       linked: {
         type: 'string',
@@ -124,6 +145,9 @@ module.exports.register = (event, context, callback) => {
     let linked = body.linked;
     let name = body.name;
 
+    // Used to verify Spotify ownership.
+    let authorization = body.authorization;
+
     // Generate new user.
     const newUser = {
       username: username,
@@ -134,6 +158,12 @@ module.exports.register = (event, context, callback) => {
       name: name,
       UUID: UUID()
     };
+
+    // For permanent accounts, a valid OAuth2
+    // token is necessary to create the account.
+    let authorize = temporary === false
+      ? Promise.resolve(true) // TODO.
+      : Promise.resolve(true);
 
     // Always check linkage first. Then check if the
     // username to be created exists, and only relax
@@ -157,10 +187,11 @@ module.exports.register = (event, context, callback) => {
             throw API.errors.validation;
           else return true;
         }))
-      // No issues with linkage to deal with.
-      : (() => Promise.resolve(true));
-
-    console.log(linkage);
+      : (() => {
+        // You must link any temporary accounts.
+        if (temporary) return Promise.reject(API.errors.validation);
+        else return Promise.resolve(true);
+      });
 
     // User creation promise. See decision tree above.
     let creation = () => Users.exists(newUser.username)
@@ -187,7 +218,7 @@ module.exports.register = (event, context, callback) => {
       });
 
     // Run the promise chain.
-    linkage().then((data) => creation())
+    authorize.then(() => linkage()).then((data) => creation())
       .then((data) => { callback(null, API.response(200, newUser)); })
       .catch((error) => { callback(null, error); });
   }
@@ -200,7 +231,7 @@ module.exports.update = (event, context, callback) => {
 
   // Validation schema.
   const schema = {
-    type: 'Object',
+    type: 'object',
     properties: {
       username: {
         type: 'string',
@@ -280,7 +311,7 @@ module.exports.batch = (event, context, callback) => {
 
   // Validation schema.
   const schema = {
-    type: 'Object',
+    type: 'object',
     properties: {
       users: {
         type: 'array',
