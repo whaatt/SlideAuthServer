@@ -16,7 +16,11 @@ module.exports.response = (status, body, isDS) => {
     body.success = (status === 200);
   const response = {
     statusCode: status,
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    headers: {
+      // This should fix CORS issues?
+      'Access-Control-Allow-Origin': '*'
+    }
   };
 
   // Important.
